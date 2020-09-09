@@ -59,6 +59,7 @@
 #include "nautilus-file-utilities.h"
 #include "nautilus-file-undo-operations.h"
 #include "nautilus-file-undo-manager.h"
+#include "nautilus-tag-manager.h"
 #include "nautilus-ui-utilities.h"
 
 #ifdef GDK_WINDOWING_X11
@@ -5438,6 +5439,10 @@ retry:
         }
         if (copy_job->is_move)
         {
+            g_autoptr (NautilusTagManager) tag_manager = nautilus_tag_manager_get ();
+
+            nautilus_tag_manager_update_moved_uris (tag_manager, src, dest);
+
             nautilus_file_changes_queue_file_moved (src, dest);
         }
         else
@@ -6159,12 +6164,15 @@ retry:
                      NULL,
                      &error))
     {
+        g_autoptr (NautilusTagManager) tag_manager = nautilus_tag_manager_get ();
+
         if (debuting_files)
         {
             g_hash_table_replace (debuting_files, g_object_ref (dest), GINT_TO_POINTER (TRUE));
         }
 
         nautilus_file_changes_queue_file_moved (src, dest);
+        nautilus_tag_manager_update_moved_uris (tag_manager, src, dest);
 
         dest_uri = g_file_get_uri (dest);
 
