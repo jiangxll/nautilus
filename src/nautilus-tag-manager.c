@@ -831,6 +831,96 @@ nautilus_tag_manager_update_moved_uris (NautilusTagManager *self,
 }
 
 static void
+update_removed_uris_callback (GObject      *object,
+                              GAsyncResult *result,
+                              gpointer      user_data)
+{
+    g_autoptr (GError) error = NULL;
+
+    tracker_sparql_connection_update_finish (TRACKER_SPARQL_CONNECTION (object),
+                                             result,
+                                             &error);
+
+    if (error != NULL && error->code != G_IO_ERROR_CANCELLED)
+    {
+        g_warning ("Error removing deleted/trashed starred uris: %s", error->message);
+    }
+    else
+    {
+        g_autoptr (NautilusTagManager) tag_manager = nautilus_tag_manager_get ();
+
+        g_signal_emit_by_name (tag_manager, "starred-changed", NULL);
+    }
+}
+
+/**
+ * nautilus_tag_manager_update_removed_uris:
+ * @self: The tag manager singleton
+ * @src: The deleted/trashed location as a #GFile
+ *
+ * Checks whether the deleted/trashed item @src was starred or contained starred
+ * items, and erases the respective URIs from the database.
+ */
+void
+nautilus_tag_manager_update_removed_uris (NautilusTagManager *self,
+                                          GFile              *src)
+{
+    GHashTableIter starred_iter;
+    gchar *starred_uri;
+    g_autoptr (GPtrArray) broken_starred_uris = NULL;
+    g_autoptr (GString) query = NULL;
+
+    if (!self->database_ok)
+    {
+        g_message ("nautilus-tag-manager: No Tracker connection");
+        return;
+    }
+
+    broken_starred_uris = g_ptr_array_new ();
+
+    g_hash_table_iter_init (&starred_iter, self->starred_file_uris);
+    while (g_hash_table_iter_next (&starred_iter, (gpointer *) &starred_uri, NULL))
+    {
+        g_autoptr (GFile) starred_location = NULL;
+
+        starred_location = g_file_new_for_uri (starred_uri);
+
+        if (g_file_equal (starred_location, src)
+            || g_file_has_prefix (starred_location, src))
+        {
+            g_ptr_array_add (broken_starred_uris, starred_uri);
+        }
+    }
+
+    if (broken_starred_uris->len == 0)
+    {
+        /* No starred files are affected by this move/rename */
+        return;
+    }
+
+    DEBUG ("Erasing %i deleted/trashed starred files from database", broken_starred_uris->len);
+
+    query = g_string_new ("DELETE DATA {");
+
+    for (guint i = 0; i < broken_starred_uris->len; i++)
+    {
+        gchar *old_uri = g_ptr_array_index (broken_starred_uris, i);
+        g_string_append_printf (query,
+                                "    <%s> a nautilus:File ; "
+                                "        nautilus:starred true . ",
+                                old_uri);
+    }
+
+    g_string_append (query, "}");
+
+    tracker_sparql_connection_update_async (self->db,
+                                            query->str,
+                                            self->cancellable,
+                                            update_removed_uris_callback,
+                                            NULL);
+}
+
+static void
 process_tracker2_data_cb (GObject      *source_object,
                           GAsyncResult *res,
                           gpointer      user_data)

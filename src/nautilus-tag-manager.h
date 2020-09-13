@@ -56,6 +56,8 @@ gboolean            nautilus_tag_manager_can_star_contents (NautilusTagManager *
 void                nautilus_tag_manager_update_moved_uris  (NautilusTagManager *tag_manager,
                                                              GFile              *src,
                                                              GFile              *dest);
+void                nautilus_tag_manager_update_removed_uris  (NautilusTagManager *tag_manager,
+                                                               GFile              *src);
 
 void                nautilus_tag_manager_maybe_migrate_tracker2_data (NautilusTagManager *self);
 

@@ -2013,7 +2013,10 @@ file_deleted_callback (GFile    *file,
 
     if (error == NULL)
     {
+        g_autoptr (NautilusTagManager) tag_manager = nautilus_tag_manager_get ();
+
         nautilus_file_changes_queue_file_removed (file);
+        nautilus_tag_manager_update_removed_uris (tag_manager, file);
         report_delete_progress (data->job, data->source_info, data->transfer_info);
 
         return;
@@ -2321,8 +2324,11 @@ trash_file (CommonJob     *job,
 
     if (g_file_trash (file, job->cancellable, &error))
     {
+        g_autoptr (NautilusTagManager) tag_manager = nautilus_tag_manager_get ();
+
         transfer_info->num_files++;
         nautilus_file_changes_queue_file_removed (file);
+        nautilus_tag_manager_update_removed_uris (tag_manager, file);
 
         if (job->undo_info != NULL)
         {
