@@ -857,13 +857,19 @@ update_removed_uris_callback (GObject      *object,
  * nautilus_tag_manager_update_removed_uris:
  * @self: The tag manager singleton
  * @src: The deleted/trashed location as a #GFile
+ * @removed_uris: (out) (optional): Location for a #GPtrArray of removed URIs.
  *
  * Checks whether the deleted/trashed item @src was starred or contained starred
  * items, and erases the respective URIs from the database.
+ *
+ * If @removed_uris is not %NULL, creates an array with copies of the removed
+ * URIs which can be passed to nautilus_tag_manager_update_restored_uris() if
+ * the trashing operation is undone. If no URI is removed, this is ignored.
  */
 void
-nautilus_tag_manager_update_removed_uris (NautilusTagManager *self,
-                                          GFile              *src)
+nautilus_tag_manager_update_removed_uris (NautilusTagManager  *self,
+                                          GFile               *src,
+                                          GPtrArray          **removed_uris)
 {
     GHashTableIter starred_iter;
     gchar *starred_uri;
@@ -918,6 +924,93 @@ nautilus_tag_manager_update_removed_uris (NautilusTagManager *self,
                                             self->cancellable,
                                             update_removed_uris_callback,
                                             NULL);
+
+    if (removed_uris != NULL)
+    {
+        *removed_uris = g_ptr_array_copy (broken_starred_uris, (GCopyFunc) g_strdup, NULL);
+        g_ptr_array_set_free_func (*removed_uris, g_free);
+    }
+}
+
+static void
+update_restored_uris_callback (GObject      *object,
+                               GAsyncResult *result,
+                               gpointer      user_data)
+{
+    g_autoptr (GError) error = NULL;
+    g_autoptr (GPtrArray) restored_uris = user_data;
+
+    tracker_sparql_connection_update_finish (TRACKER_SPARQL_CONNECTION (object),
+                                             result,
+                                             &error);
+
+    if (error != NULL && error->code != G_IO_ERROR_CANCELLED)
+    {
+        g_warning ("Error restoring URIs of previously starred items: %s", error->message);
+    }
+    else
+    {
+        g_autolist (NautilusFile) restored_files = NULL;
+        g_autoptr (NautilusTagManager) tag_manager = NULL;
+
+        for (guint i = 0; i < restored_uris->len; i++)
+        {
+            gchar *restored_uri = g_ptr_array_index (restored_uris, i);
+
+            restored_files = g_list_prepend (restored_files, nautilus_file_get_by_uri (restored_uri));
+        }
+
+        tag_manager = nautilus_tag_manager_get ();
+        g_signal_emit_by_name (tag_manager, "starred-changed", restored_files);
+    }
+}
+
+/**
+ * nautilus_tag_manager_update_restored_uris:
+ * @self: The tag manager singleton
+ * @restored_uris: A #GPtrArray of previously starred URIs.
+ *
+ * Adds back URIs previously removed from database. To be used when a trashing
+ * operation is undone, such that restored items keep their starred status.
+ */
+void
+nautilus_tag_manager_update_restored_uris (NautilusTagManager *self,
+                                           GPtrArray          *restored_uris)
+{
+    g_autoptr (GString) query = NULL;
+
+    if (!self->database_ok)
+    {
+        g_message ("nautilus-tag-manager: No Tracker connection");
+        return;
+    }
+
+    if (restored_uris->len == 0)
+    {
+        /* No starred files were trashed in the undone operation */
+        return;
+    }
+
+    DEBUG ("Adding back %i previously trashed starred URIs", restored_uris->len);
+
+    query = g_string_new ("INSERT DATA {");
+
+    for (guint i = 0; i < restored_uris->len; i++)
+    {
+        gchar *new_uri = g_ptr_array_index (restored_uris, i);
+        g_string_append_printf (query,
+                                "    <%s> a nautilus:File ; "
+                                "        nautilus:starred true . ",
+                                new_uri);
+    }
+
+    g_string_append (query, "}");
+
+    tracker_sparql_connection_update_async (self->db,
+                                            query->str,
+                                            self->cancellable,
+                                            update_restored_uris_callback,
+                                            g_ptr_array_ref (restored_uris));
 }
 
 static void

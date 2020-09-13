@@ -57,7 +57,10 @@ void                nautilus_tag_manager_update_moved_uris  (NautilusTagManager 
                                                              GFile              *src,
                                                              GFile              *dest);
 void                nautilus_tag_manager_update_removed_uris  (NautilusTagManager *tag_manager,
-                                                               GFile              *src);
+                                                               GFile              *src,
+                                                               GPtrArray         **removed_uris);
+void                nautilus_tag_manager_update_restored_uris  (NautilusTagManager *tag_manager,
+                                                                GPtrArray          *restored_uris);
 
 void                nautilus_tag_manager_maybe_migrate_tracker2_data (NautilusTagManager *self);
 

@@ -1595,6 +1595,7 @@ struct _NautilusFileUndoInfoTrash
     NautilusFileUndoInfo parent_instance;
 
     GHashTable *trashed;
+    GPtrArray *starred_uris;
 };
 
 G_DEFINE_TYPE (NautilusFileUndoInfoTrash, nautilus_file_undo_info_trash, NAUTILUS_TYPE_FILE_UNDO_INFO)
@@ -1813,6 +1814,7 @@ trash_retrieve_files_ready (GObject      *source,
         GList *gfiles_in_trash, *l;
         GFile *item;
         GFile *dest;
+        g_autoptr (NautilusTagManager) tag_manager = nautilus_tag_manager_get ();
 
         gfiles_in_trash = g_hash_table_get_keys (files_to_restore);
 
@@ -1825,6 +1827,8 @@ trash_retrieve_files_ready (GObject      *source,
         }
 
         g_list_free (gfiles_in_trash);
+
+        nautilus_tag_manager_update_restored_uris (tag_manager, self->starred_uris);
 
         /* Here we must do what's necessary for the callback */
         file_undo_info_transfer_callback (NULL, (error == NULL), self);
@@ -1857,6 +1861,7 @@ nautilus_file_undo_info_trash_init (NautilusFileUndoInfoTrash *self)
 {
     self->trashed = g_hash_table_new_full (g_file_hash, (GEqualFunc) g_file_equal,
                                            g_object_unref, NULL);
+    self->starred_uris = g_ptr_array_new_with_free_func (g_free);
 }
 
 static void
@@ -1864,6 +1869,7 @@ nautilus_file_undo_info_trash_finalize (GObject *obj)
 {
     NautilusFileUndoInfoTrash *self = NAUTILUS_FILE_UNDO_INFO_TRASH (obj);
     g_hash_table_destroy (self->trashed);
+    g_ptr_array_unref (self->starred_uris);
 
     G_OBJECT_CLASS (nautilus_file_undo_info_trash_parent_class)->finalize (obj);
 }
@@ -1890,9 +1896,17 @@ nautilus_file_undo_info_trash_new (gint item_count)
                          NULL);
 }
 
+/**
+ * nautilus_file_undo_info_trash_add_file:
+ * @self: The undo info instance.
+ * @file: The original location of the trashed file.
+ * @starred_uris: (transfer full) (element-type utf8) (nullable): Starred URIs
+ * removed as a result of @file being moved to trash.
+ */
 void
 nautilus_file_undo_info_trash_add_file (NautilusFileUndoInfoTrash *self,
-                                        GFile                     *file)
+                                        GFile                     *file,
+                                        GPtrArray                 *starred_uris)
 {
     GTimeVal current_time;
     gsize orig_trash_time;
@@ -1901,6 +1915,10 @@ nautilus_file_undo_info_trash_add_file (NautilusFileUndoInfoTrash *self,
     orig_trash_time = current_time.tv_sec;
 
     g_hash_table_insert (self->trashed, g_object_ref (file), GSIZE_TO_POINTER (orig_trash_time));
+    if (starred_uris != NULL)
+    {
+        g_ptr_array_extend_and_steal (self->starred_uris, starred_uris);
+    }
 }
 
 GList *

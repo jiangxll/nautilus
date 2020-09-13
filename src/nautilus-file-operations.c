@@ -2016,7 +2016,7 @@ file_deleted_callback (GFile    *file,
         g_autoptr (NautilusTagManager) tag_manager = nautilus_tag_manager_get ();
 
         nautilus_file_changes_queue_file_removed (file);
-        nautilus_tag_manager_update_removed_uris (tag_manager, file);
+        nautilus_tag_manager_update_removed_uris (tag_manager, file, NULL);
         report_delete_progress (data->job, data->source_info, data->transfer_info);
 
         return;
@@ -2325,14 +2325,17 @@ trash_file (CommonJob     *job,
     if (g_file_trash (file, job->cancellable, &error))
     {
         g_autoptr (NautilusTagManager) tag_manager = nautilus_tag_manager_get ();
+        g_autoptr (GPtrArray) starred_uris = NULL;
 
         transfer_info->num_files++;
         nautilus_file_changes_queue_file_removed (file);
-        nautilus_tag_manager_update_removed_uris (tag_manager, file);
+        nautilus_tag_manager_update_removed_uris (tag_manager, file, &starred_uris);
 
         if (job->undo_info != NULL)
         {
-            nautilus_file_undo_info_trash_add_file (NAUTILUS_FILE_UNDO_INFO_TRASH (job->undo_info), file);
+            nautilus_file_undo_info_trash_add_file (NAUTILUS_FILE_UNDO_INFO_TRASH (job->undo_info),
+                                                    file,
+                                                    g_steal_pointer (&starred_uris));
         }
 
         report_trash_progress (job, source_info, transfer_info);
